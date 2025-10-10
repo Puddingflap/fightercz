@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nl">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -287,11 +287,19 @@ function stepVERSUS() {
   drawBG(null); ctx.fillStyle = '#10151b'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#fff'; ctx.font = '24px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.fillText('VERSUS', W / 2, 56);
   const left = ROSTER[select.p1Index], right = ROSTER[select.p2Index];
-  const drawSide = (slot, x) => {
-    const p = portraitsCache[slot.key]; if (p) { const s = Math.min(1, 240 / Math.max(p.width, p.height)); const w = p.width * s, h = p.height * s; ctx.drawImage(p, x - w / 2, H / 2 - h / 2, w, h); }
-    ctx.fillStyle = '#e6f0ff'; ctx.font = '20px ui-monospace,monospace'; ctx.fillText(slot.name || slot.key, x, H - 56);
+  const drawSide = (slot, x, fighter) => {
+    const p = portraitsCache[slot.key]; if (p) { const s = Math.min(1, 240 / Math.max(p.width, p.height)); const w = p.width * s, h = p.height * s; ctx.drawImage(p, x - w / 2, fighter.y - h / 2, w, h); }
+    ctx.fillStyle = '#e6f0ff'; ctx.font = '20px ui-monospace,monospace'; ctx.fillText(slot.name || slot.key, x, fighter.y + fighter.h / 2 + 20);
   };
-  drawSide(left, W * 0.25); drawSide(right, W * 0.75);
+  if (fight.p1 && fight.p2) {
+    drawSide(left, W * 0.25, fight.p1);
+    drawSide(right, W * 0.75, fight.p2);
+    fight.p1.draw();
+    fight.p2.draw();
+  } else {
+    drawSide(left, W * 0.25, { y: GROUND_Y - 64 * SPRITE_SCALE + 50, h: 64 * SPRITE_SCALE });
+    drawSide(right, W * 0.75, { y: GROUND_Y - 64 * SPRITE_SCALE + 50, h: 64 * SPRITE_SCALE });
+  }
   ctx.fillStyle = COLORS.p1; ctx.font = '16px ui-monospace,monospace'; ctx.fillText('1P', W * 0.25, 86);
   ctx.fillStyle = COLORS.p2; ctx.fillText('2P', W * 0.75, 86);
   ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '14px ui-monospace,monospace'; ctx.fillText(fightReady ? 'READY!' : 'Loading…', W / 2, H - 24);
@@ -306,7 +314,7 @@ function stepVERSUS() {
   if (versusTimer > 60 && fightReady) { STATE = 'FIGHT'; stopTitleMusic(); clearKeys(); cooldown = 8; fightLoadPromise = null; }
 }
 
-const GRAV = 0.75, FRICTION = 0.85, SPRITE_SCALE = 2.25, GROUND_Y = 530;
+const GRAV = 0.75, FRICTION = 0.85, SPRITE_SCALE = 2.25, GROUND_Y = 530; // Aangepast naar 530
 const ENERGY_MAX = 100, ENERGY_HIT_GAIN = 12, ENERGY_GOT_HIT_GAIN = 6, ENERGY_PASSIVE_PER_FRAME = 0.5 / 60, ENERGY_POWER_COST = 40, ENERGY_CHARGE_PER_FRAME = 20 / 60;
 const DAMAGE_NORMAL = 6, DAMAGE_POWER = 10;
 let fight = { p1: null, p2: null, stage: null, freeze: 0, paused: false, round: 1, w1: 0, w2: 0, phase: 'intro', phaseTimer: 0, roundSettled: false, matchOver: false }, impacts = [];
@@ -346,7 +354,7 @@ async function loadFighterSprites(entry) {
   return anim;
 }
 class Fighter {
-  constructor(name, anim, ctrl) { this.name = name; this.anim = anim; this.ctrl = ctrl; this.w = 64 * SPRITE_SCALE; this.h = 64 * SPRITE_SCALE; this.x = W / 2 - this.w / 2; this.y = GROUND_Y - this.h; this.vx = 0; this.vy = 0; this.onGround = true; this.state = 'idle'; this.frame = 0; this.timer = 0; this.facing = 1; this.hp = 100; this.energy = 0; this.hitstun = 0; this.attackTimer = 0; this.attackDidHit = false; this.attackActiveFrom = 0; this.attackActiveTo = 0; this.charging = false; this.chargePulse = 0; }
+  constructor(name, anim, ctrl) { this.name = name; this.anim = anim; this.ctrl = ctrl; this.w = 64 * SPRITE_SCALE; this.h = 64 * SPRITE_SCALE; this.x = W / 2 - this.w / 2; this.y = GROUND_Y - this.h + 50; this.vx = 0; this.vy = 0; this.onGround = true; this.state = 'idle'; this.frame = 0; this.timer = 0; this.facing = 1; this.hp = 100; this.energy = 0; this.hitstun = 0; this.attackTimer = 0; this.attackDidHit = false; this.attackActiveFrom = 0; this.attackActiveTo = 0; this.charging = false; this.chargePulse = 0; }
   resetRound(side) { this.hp = 100; this.energy = 0; this.vx = this.vy = 0; this.onGround = true; this.frame = 0; this.timer = 0; this.state = 'idle'; this.facing = side; this.attackTimer = 0; this.attackDidHit = false; this.hitstun = 0; this.charging = false; }
   play(s) { if (this.state !== s) { this.state = s; this.frame = 0; this.timer = 0; this.attackTimer = 0; this.attackDidHit = false; if (s === 'punch') { this.attackActiveFrom = 3; this.attackActiveTo = 6; } else if (s === 'kick') { this.attackActiveFrom = 4; this.attackActiveTo = 7; } else if (s === 'kp') { this.attackActiveFrom = 3; this.attackActiveTo = 6; } else if (s === 'kk') { this.attackActiveFrom = 4; this.attackActiveTo = 7; } else if (s === 'power') { this.attackActiveFrom = 2; this.attackActiveTo = 10; } else if (s === 'ko') { this.attackActiveFrom = 0; this.attackActiveTo = 0; } else { this.attackActiveFrom = 0; this.attackActiveTo = 0; } } }
   canAct() { return this.hitstun === 0 && !['punch', 'kick', 'kp', 'kk', 'power', 'ko'].includes(this.state); }
@@ -408,8 +416,16 @@ async function startFight(entry1, entry2, mode) {
   fight.round = 1; fight.w1 = 0; fight.w2 = 0; fight.paused = false; fight.phase = 'intro'; fight.phaseTimer = 90;
   fight.roundSettled = false; fight.matchOver = false;
   resetPositions(); fight.freeze = 0; impacts = [];
+  console.log('Fight initialized:', fight.p1.name, fight.p2.name); // Debug log
 }
-function resetPositions() { fight.p1.resetRound(1); fight.p2.resetRound(-1); fight.p1.x = W * 0.30 - fight.p1.w / 2; fight.p2.x = W * 0.70 - fight.p2.w / 2; }
+function resetPositions() {
+  fight.p1.resetRound(1);
+  fight.p2.resetRound(-1);
+  fight.p1.x = W * 0.30 - fight.p1.w / 2;
+  fight.p2.x = W * 0.70 - fight.p2.w / 2;
+  fight.p1.y = GROUND_Y - fight.p1.h + 0; // Consistent met nieuwe GROUND_Y
+  fight.p2.y = GROUND_Y - fight.p2.h + 0; // Consistent met nieuwe GROUND_Y
+}
 
 function drawPause() {
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
