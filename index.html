@@ -94,7 +94,7 @@ function stopTitleMusic() { if (!titleMusic.paused) fadeAudio(titleMusic, 0, 350
 addEventListener('keydown', e => { if (STATE === 'TITLE' && !userInteracted && (e.code === 'Enter' || e.code === 'Space')) { userInteracted = true; startTitleMusic(); } if (e.code === 'KeyM') { titleMusic.muted = !titleMusic.muted; } });
 
 
-// --- VOLLEDIG HERSCHREVEN LAADPROCES ---
+// --- AANGEPAST LAADPROCES ---
 async function tryLoadPaths(paths) {
     for (const path of paths) {
         const img = await loadImage(path);
@@ -103,40 +103,29 @@ async function tryLoadPaths(paths) {
     return null;
 }
 
+function getFolderForKey(key) {
+  const e = ROSTER.find(r => r?.key === key);
+  const base = (e && e.folder) ? e.folder : key;
+  const variants = [base];
+  if (base.includes('.')) variants.push(base.replace(/\./g, '')); else variants.push(base.replace(/_/g, '.'));
+  variants.push(key);
+  return [...new Set(variants)];
+}
+
 async function preloadCharacterUI(character) {
     if (!character || !character.key) return;
     const key = character.key;
-
-    // 1. LAAD THUMBNAIL: Prioriteer de 'idle sprite' van het personage.
     const folders = getFolderForKey(key);
     let thumbImg = null;
-
     for (const folder of folders) {
-        thumbImg = await tryLoadPaths([
-            `assets/chars/${folder}/${key}_idle.png`,
-            `assets/chars/${folder}/${key}_idle1.png`
-        ]);
+        thumbImg = await tryLoadPaths([ `assets/chars/${folder}/${key}_idle.png`, `assets/chars/${folder}/${key}_idle1.png` ]);
         if (thumbImg) break;
     }
-    
-    // Als er geen idle sprite is, probeer de oude /thumbs/ map als fallback.
-    if (!thumbImg) {
-        thumbImg = await loadImage(`${UI.thumbs}${key}.png`);
-    }
-
-    if (thumbImg) {
-        thumbsCache[key] = thumbImg;
-    }
-
-    // 2. LAAD PORTRET: Probeer de speciale portret-afbeelding te laden.
+    if (!thumbImg) { thumbImg = await loadImage(`${UI.thumbs}${key}.png`); }
+    if (thumbImg) { thumbsCache[key] = thumbImg; }
     const portraitImg = await loadImage(`${UI.portraits}${key}.png`);
-    if (portraitImg) {
-        portraitsCache[key] = portraitImg;
-    } else if (thumbImg) {
-        // 3. FALLBACK: Als er geen portret is, gebruik de (zojuist geladen) thumbnail.
-        console.log(`Portret voor ${key} niet gevonden, gebruik thumbnail als fallback.`);
-        portraitsCache[key] = thumbImg;
-    }
+    if (portraitImg) { portraitsCache[key] = portraitImg; } 
+    else if (thumbImg) { portraitsCache[key] = thumbImg; }
 }
 
 async function preloadAll() {
@@ -147,11 +136,7 @@ async function preloadAll() {
     loadImage(UI.mascot).then(img => assets.mascot = img),
     loadImage(STAGE).then(img => assets.stage = img)
   ];
-
-  const characterAssetPromises = ROSTER
-    .filter(r => r?.key)
-    .map(r => preloadCharacterUI(r));
-    
+  const characterAssetPromises = ROSTER.filter(r => r?.key).map(r => preloadCharacterUI(r));
   await Promise.all([...coreAssetPromises, ...characterAssetPromises]);
 }
 
@@ -159,10 +144,7 @@ async function preloadAll() {
   try {
     await preloadAll();
     STATE = 'TITLE';
-  } catch (e) {
-    console.error('Boot failed:', e);
-    STATE = 'TITLE';
-  }
+  } catch (e) { console.error('Boot failed:', e); STATE = 'TITLE'; }
   loop();
 })();
 
@@ -197,7 +179,6 @@ function stepTITLE() {
   if (cooldown > 0) { cooldown--; return; }
   if (keys.has('Enter') || keys.has('Space')) { userInteracted = true; startTitleMusic(); STATE = 'MODE'; sfxBeep(); clearKeys(); cooldown = 10; }
 }
-
 function stepMODE() {
   drawBG(assets.titleBG);
   ctx.fillStyle = '#fff'; ctx.font = '26px ui-monospace,monospace'; ctx.textAlign = 'center';
@@ -219,21 +200,12 @@ function stepMODE() {
 }
 
 const grid = { cols: 5, rows: 2, cellW: 120, cellH: 120, startX: (W - 5 * 120) / 2, startY: 180 };
-function getFolderForKey(key) {
-  const e = ROSTER.find(r => r?.key === key);
-  const base = (e && e.folder) ? e.folder : key;
-  const variants = [base];
-  if (base.includes('.')) variants.push(base.replace(/\./g, '')); else variants.push(base.replace(/_/g, '.'));
-  variants.push(key);
-  return [...new Set(variants)];
-}
 
 function drawThumbCell(ix, iy, img, locked = false, isReady = false, readyTag = '') {
   const x = grid.startX + ix * grid.cellW, y = grid.startY + iy * grid.cellH, w = grid.cellW - 8, h = grid.cellH - 8;
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-  if (img) { 
-      // Aangepaste drawImage voor de idle sprites
+  if (img) {
       const scale = Math.min((w - 16) / img.width, (h - 16) / img.height);
       const imgW = img.width * scale;
       const imgH = img.height * scale;
@@ -263,12 +235,8 @@ function stepSELECT() {
   const rightPortrait = portraitsCache[rk];
   
   const pSize = 260;
-  if (leftPortrait) {
-    ctx.drawImage(leftPortrait, 60, 120, pSize, pSize);
-  }
-  if (rightPortrait) {
-    ctx.drawImage(rightPortrait, W - 60 - pSize, 120, pSize, pSize);
-  }
+  if (leftPortrait) { ctx.drawImage(leftPortrait, 60, 120, pSize, pSize); }
+  if (rightPortrait) { ctx.drawImage(rightPortrait, W - 60 - pSize, 120, pSize, pSize); }
 
   ctx.fillStyle = COLORS.p1; ctx.font = '18px ui-monospace,monospace'; ctx.textAlign = 'left'; ctx.fillText('1P', 60, 120 + pSize + 22);
   ctx.fillStyle = COLORS.p2; ctx.textAlign = 'right'; ctx.fillText('2P', W - 60, 120 + pSize + 22);
@@ -322,7 +290,6 @@ function stepSELECT() {
   }
   if (keys.has('Escape')) { STATE = 'MODE'; select = { p1Index: 0, p2Index: 1, p1Locked: false, p2Locked: false }; clearKeys(); sfxBeep(500); cooldown = 8; }
 }
-
 function stepVERSUS() {
   drawBG(null); ctx.fillStyle = '#10151b'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#fff'; ctx.font = '24px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.fillText('VERSUS', W / 2, 56);
@@ -349,10 +316,7 @@ function stepVERSUS() {
     const L = ROSTER[select.p1Index], R = ROSTER[select.p2Index];
     fightLoadPromise = startFight(L, R, mode)
       .then(() => { fightReady = true; })
-      .catch(e => { 
-          console.error('Fight load failed:', e); 
-          fightReady = true;
-      });
+      .catch(e => { console.error('Fight load failed:', e); fightReady = true; });
   }
   versusTimer++;
   if (versusTimer > 60 && fightReady) { STATE = 'FIGHT'; stopTitleMusic(); clearKeys(); cooldown = 8; fightLoadPromise = null; }
@@ -362,6 +326,7 @@ const GRAV = 0.75, FRICTION = 0.85, SPRITE_SCALE = 2.25, GROUND_Y = 530;
 const ENERGY_MAX = 100, ENERGY_HIT_GAIN = 12, ENERGY_GOT_HIT_GAIN = 6, ENERGY_PASSIVE_PER_FRAME = 0.5 / 60, ENERGY_POWER_COST = 40, ENERGY_CHARGE_PER_FRAME = 20 / 60;
 const DAMAGE_NORMAL = 6, DAMAGE_POWER = 10;
 let fight = { p1: null, p2: null, stage: null, freeze: 0, paused: false, round: 1, w1: 0, w2: 0, phase: 'intro', phaseTimer: 0, roundSettled: false, matchOver: false }, impacts = [];
+
 function addImpact(x, y, t = 'yellow') { if (impacts.length > 18) impacts.shift(); impacts.push({ x, y, life: 4, tint: t }); }
 function drawImpacts() { for (const p of impacts) { const t = p.life / 4, col = p.tint === 'blue' ? `rgba(120,200,255,${0.55 * t})` : `rgba(255,235,160,${0.55 * t})`; ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.beginPath(); ctx.arc(p.x, p.y, 5 * (1 - t) + 2, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill(); ctx.restore(); } }
 function updateImpacts() { impacts = impacts.filter(p => (--p.life) > 0); }
@@ -379,26 +344,92 @@ function drawBars(p1, p2) {
 }
 function rectsOverlap(a, b) { return a && b && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
 
-async function loadAnim(folders, key, state) {
-  async function any(base) { const exts = ['.png', '.PNG', '.webp']; for (const e of exts) { const im = await loadImage(base + e); if (im) return im; } return null; }
-  const frames = [];
-  for (const folder of folders) { const exact = await any(`assets/chars/${folder}/${key}_${state}`); if (exact) { frames.push(exact); break; } }
-  for (const folder of folders) { for (let n = 1; n <= 8; n++) { const fr = await any(`assets/chars/${folder}/${key}_${state}${n}`); if (fr) frames.push(fr); } if (frames.length) break; }
-  return frames.length ? frames : [await loadImage('data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==')];
+// --- NIEUWE FUNCTIES VOOR SPRITESHEETS ---
+async function loadFighterSprites_Legacy(entry) {
+    console.log(`Laden van ${entry.key} via oude methode...`);
+    const key = entry.key, folders = getFolderForKey(key);
+    const states = ['idle', 'walk', 'run', 'punch', 'kick', 'kneel', 'kp', 'kk', 'power', 'ko'];
+    const anim = { isSpritesheet: false };
+
+    async function loadAnim(animFolders, animKey, state) {
+        async function any(base) { const exts = ['.png', '.PNG', '.webp']; for (const e of exts) { const im = await loadImage(base + e); if (im) return im; } return null; }
+        const frames = [];
+        for (const folder of animFolders) { const exact = await any(`assets/chars/${folder}/${animKey}_${state}`); if (exact) { frames.push(exact); break; } }
+        for (const folder of animFolders) { for (let n = 1; n <= 8; n++) { const fr = await any(`assets/chars/${folder}/${animKey}_${state}${n}`); if (fr) frames.push(fr); } if (frames.length) break; }
+        return frames.length ? frames : null;
+    }
+
+    const animPromises = states.map(s => loadAnim(folders, key, s));
+    const animResults = await Promise.all(animPromises);
+
+    let fallback = animResults[0] || [await loadImage('data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==')];
+
+    states.forEach((s, i) => anim[s] = animResults[i] || fallback);
+    return anim;
 }
+
 async function loadFighterSprites(entry) {
-  const key = entry.key, folders = getFolderForKey(key);
-  const states = ['idle', 'walk', 'run', 'punch', 'kick', 'kneel', 'kp', 'kk', 'power', 'ko'], anim = {};
-  const animPromises = states.map(s => loadAnim(folders, key, s));
-  const animResults = await Promise.all(animPromises);
-  states.forEach((s, i) => anim[s] = animResults[i]);
-  if (!anim.idle.length) { const c = document.createElement('canvas'); c.width = 64; c.height = 64; const x = c.getContext('2d'); x.fillStyle = '#111'; x.fillRect(0, 0, 64, 64); x.fillStyle = '#5ad'; x.fillRect(16, 16, 32, 32); const i = new Image(); i.src = c.toDataURL(); await i.decode(); anim.idle = [i]; }
-  if (!anim.walk.length) anim.walk = anim.idle; if (!anim.run.length) anim.run = anim.walk; if (!anim.punch.length) anim.punch = anim.idle;
-  if (!anim.kick.length) anim.kick = anim.punch; if (!anim.kneel.length) anim.kneel = anim.idle; if (!anim.kp.length) anim.kp = anim.punch; if (!anim.kk.length) anim.kk = anim.kick; if (!anim.power.length) anim.power = anim.punch; if (!anim.ko.length) anim.ko = anim.idle;
-  return anim;
+    const key = entry.key;
+    const folder = getFolderForKey(key)[0];
+    const basePath = `assets/chars/${folder}/${key}_spritesheet`;
+
+    try {
+        const jsonResponse = await fetch(`${basePath}.json`);
+        if (!jsonResponse.ok) throw new Error('JSON niet gevonden');
+
+        const [data, sheetImage] = await Promise.all([
+            jsonResponse.json(),
+            loadImage(`${basePath}.png`)
+        ]);
+
+        if (!sheetImage) throw new Error('Spritesheet afbeelding niet gevonden');
+        
+        console.log(`Laden van ${key} via NIEUWE spritesheet methode...`);
+        const states = { idle: [], walk: [], run: [], punch: [], kick: [], kneel: [], kp: [], kk: [], power: [], ko: [] };
+        for (const frameName in data.frames) {
+            // Haalt 'idle', 'punch' etc. uit 'cz_idle1.png'
+            const match = frameName.match(/_([a-zA-Z]+)/);
+            if (match && match[1]) {
+                const stateName = match[1].replace(/[0-9]/g, ''); // Verwijder cijfers
+                if (states[stateName]) {
+                    states[stateName].push(frameName);
+                }
+            }
+        }
+        
+        for(const state in states) {
+            states[state].sort();
+            // Fallback voor animaties die niet in de spritesheet zitten
+            if (states[state].length === 0) {
+                states[state] = states.idle; 
+            }
+        }
+
+        return { isSpritesheet: true, sheet: sheetImage, data: data.frames, states };
+
+    } catch (error) {
+        console.warn(`Spritesheet voor ${key} niet gevonden, terugvallen op oude methode.`);
+        return loadFighterSprites_Legacy(entry);
+    }
 }
+
+
 class Fighter {
-  constructor(name, anim, ctrl) { this.name = name; this.anim = anim; this.ctrl = ctrl; this.w = 64 * SPRITE_SCALE; this.h = 64 * SPRITE_SCALE; this.x = W / 2 - this.w / 2; this.y = GROUND_Y - this.h + 50; this.vx = 0; this.vy = 0; this.onGround = true; this.state = 'idle'; this.frame = 0; this.timer = 0; this.facing = 1; this.hp = 100; this.energy = 0; this.hitstun = 0; this.attackTimer = 0; this.attackDidHit = false; this.attackActiveFrom = 0; this.attackActiveTo = 0; this.charging = false; this.chargePulse = 0; }
+  // --- AANGEPASTE FIGHTER CLASS ---
+  constructor(name, spriteData, ctrl) {
+    this.name = name;
+    this.sprite = spriteData; // Bevat nu .sheet, .data, en .states OF de oude animaties
+    this.ctrl = ctrl;
+    
+    this.w = 64 * SPRITE_SCALE; this.h = 64 * SPRITE_SCALE;
+    this.x = W / 2 - this.w / 2; this.y = GROUND_Y - this.h + 50;
+    this.vx = 0; this.vy = 0; this.onGround = true;
+    this.state = 'idle'; this.frame = 0; this.timer = 0;
+    this.facing = 1; this.hp = 100; this.energy = 0;
+    this.hitstun = 0; this.attackTimer = 0; this.attackDidHit = false;
+    this.attackActiveFrom = 0; this.attackActiveTo = 0;
+    this.charging = false; this.chargePulse = 0;
+  }
   resetRound(side) { this.hp = 100; this.energy = 0; this.vx = this.vy = 0; this.onGround = true; this.frame = 0; this.timer = 0; this.state = 'idle'; this.facing = side; this.attackTimer = 0; this.attackDidHit = false; this.hitstun = 0; this.charging = false; }
   play(s) { if (this.state !== s) { this.state = s; this.frame = 0; this.timer = 0; this.attackTimer = 0; this.attackDidHit = false; if (s === 'punch') { this.attackActiveFrom = 3; this.attackActiveTo = 6; } else if (s === 'kick') { this.attackActiveFrom = 4; this.attackActiveTo = 7; } else if (s === 'kp') { this.attackActiveFrom = 3; this.attackActiveTo = 6; } else if (s === 'kk') { this.attackActiveFrom = 4; this.attackActiveTo = 7; } else if (s === 'power') { this.attackActiveFrom = 2; this.attackActiveTo = 10; } else if (s === 'ko') { this.attackActiveFrom = 0; this.attackActiveTo = 0; } else { this.attackActiveFrom = 0; this.attackActiveTo = 0; } } }
   canAct() { return this.hitstun === 0 && !['punch', 'kick', 'kp', 'kk', 'power', 'ko'].includes(this.state); }
@@ -449,9 +480,68 @@ class Fighter {
     }
   }
   physics() { this.vy += GRAV; this.x += this.vx; this.y += this.vy; if (this.y + this.h >= GROUND_Y) { this.y = GROUND_Y - this.h; this.vy = 0; this.onGround = true; } this.x = Math.max(20, Math.min(W - 20 - this.w, this.x)); }
-  animStep() { const spd = { idle: 8, walk: 10, run: 12, kneel: 1, punch: 12, kick: 12, kp: 12, kk: 12, power: 14, ko: 6 }; const arr = this.anim[this.state] || this.anim.idle; const fps = (spd[this.state] || 8); this.timer += fps / 60; if (this.timer >= 1) { this.timer = 0; this.frame++; if (['punch', 'kick', 'kp', 'kk', 'power', 'ko'].includes(this.state)) this.attackTimer++; } if (this.frame >= arr.length) { if (['punch', 'kick', 'kp', 'kk', 'power', 'ko'].includes(this.state)) { this.frame = arr.length - 1; if (this.state !== 'ko') { this._hold = (this._hold || 0) + 1; if (this._hold > 6) { this._hold = 0; this.play('idle'); } } } else this.frame = 0; } this.addEnergy(ENERGY_PASSIVE_PER_FRAME); if (this.charging) this.chargePulse += 0.12; else this.chargePulse = 0; }
-  draw() { const arr = this.anim[this.state] || this.anim.idle; const img = arr[Math.min(this.frame, arr.length - 1)]; if (this.charging) { const cx = this.x + this.w / 2, cy = this.y + this.h * 0.55, r = 18 + Math.sin(this.chargePulse) * 4; const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 3); g.addColorStop(0, 'rgba(100,180,255,0.35)'); g.addColorStop(1, 'rgba(100,180,255,0.0)'); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 3, 0, Math.PI * 2); ctx.fill(); ctx.restore(); } ctx.save(); if (this.facing === -1) { ctx.translate(this.x + this.w, this.y); ctx.scale(-1, 1); } else ctx.translate(this.x, this.y); if (img) { ctx.drawImage(img, 0, 0, this.w, this.h); } ctx.restore(); }
+  
+  animStep() {
+    const spd = { idle: 8, walk: 10, run: 12, kneel: 1, punch: 12, kick: 12, kp: 12, kk: 12, power: 14, ko: 6 };
+    const animFrames = this.sprite.isSpritesheet ? (this.sprite.states[this.state] || this.sprite.states.idle) : (this.sprite[this.state] || this.sprite.idle);
+    if (!animFrames || animFrames.length === 0) return;
+
+    const fps = (spd[this.state] || 8);
+    this.timer += fps / 60;
+
+    if (this.timer >= 1) {
+        this.timer = 0;
+        this.frame++;
+        if (['punch', 'kick', 'kp', 'kk', 'power', 'ko'].includes(this.state)) this.attackTimer++;
+    }
+    if (this.frame >= animFrames.length) {
+        if (['punch', 'kick', 'kp', 'kk', 'power', 'ko'].includes(this.state)) {
+            this.frame = animFrames.length - 1;
+            if (this.state !== 'ko') {
+                this._hold = (this._hold || 0) + 1;
+                if (this._hold > 6) { this._hold = 0; this.play('idle'); }
+            }
+        } else {
+            this.frame = 0;
+        }
+    }
+    this.addEnergy(ENERGY_PASSIVE_PER_FRAME);
+    if (this.charging) this.chargePulse += 0.12; else this.chargePulse = 0;
+  }
+  
+  draw() {
+    if (this.charging) { const cx = this.x + this.w / 2, cy = this.y + this.h * 0.55, r = 18 + Math.sin(this.chargePulse) * 4; const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 3); g.addColorStop(0, 'rgba(100,180,255,0.35)'); g.addColorStop(1, 'rgba(100,180,255,0.0)'); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 3, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+    
+    ctx.save();
+    if (this.facing === -1) {
+        ctx.scale(-1, 1);
+        ctx.translate(-this.x - this.w, this.y);
+    } else {
+        ctx.translate(this.x, this.y);
+    }
+    
+    if (this.sprite.isSpritesheet) {
+        // NIEUWE METHODE: Teken een stukje uit de spritesheet
+        const animFrames = this.sprite.states[this.state] || this.sprite.states.idle;
+        const currentFrameName = animFrames[Math.min(this.frame, animFrames.length - 1)];
+        const frameData = this.sprite.data[currentFrameName];
+        if (frameData) {
+            const { x: sx, y: sy, w: sW, h: sH } = frameData.frame;
+            ctx.drawImage(this.sprite.sheet, sx, sy, sW, sH, 0, 0, this.w, this.h);
+        }
+    } else {
+        // OUDE METHODE: Teken een losse afbeelding
+        const anim = this.sprite[this.state] || this.sprite.idle;
+        const img = anim[Math.min(this.frame, anim.length - 1)];
+        if (img) {
+            ctx.drawImage(img, 0, 0, this.w, this.h);
+        }
+    }
+    
+    ctx.restore();
+  }
 }
+
 async function startFight(entry1, entry2, mode) {
   const [a1, a2] = await Promise.all([loadFighterSprites(entry1), loadFighterSprites(entry2)]);
   fight.p1 = new Fighter(entry1.name || entry1.key, a1, 'P1');
@@ -459,8 +549,8 @@ async function startFight(entry1, entry2, mode) {
   fight.round = 1; fight.w1 = 0; fight.w2 = 0; fight.paused = false; fight.phase = 'intro'; fight.phaseTimer = 90;
   fight.roundSettled = false; fight.matchOver = false;
   resetPositions(); fight.freeze = 0; impacts = [];
-  console.log('Fight initialized:', fight.p1.name, fight.p2.name);
 }
+// ... (resetPositions en de rest van de fight logic blijft ongewijzigd) ...
 function resetPositions() {
   fight.p1.resetRound(1);
   fight.p2.resetRound(-1);
@@ -469,7 +559,6 @@ function resetPositions() {
   fight.p1.y = GROUND_Y - fight.p1.h + 0;
   fight.p2.y = GROUND_Y - fight.p2.h + 0;
 }
-
 function drawPause() {
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#e6f0ff'; ctx.font = '32px ui-monospace,monospace'; ctx.textAlign = 'center';
@@ -478,7 +567,6 @@ function drawPause() {
   ctx.fillText('[P/ESC] Resume  ·  [R] Restart Round  ·  [Q] Quit to Select', W / 2, H / 2 + 4);
 }
 function togglePause() { fight.paused = !fight.paused; if (fight.paused) clearKeys(); }
-
 function stepFIGHT() {
   drawBG(assets.stage);
   if (!fight.p1 || !fight.p2) { ctx.fillStyle = '#e6f0ff'; ctx.font = '16px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.fillText('Loading...', W / 2, H / 2); return; }
@@ -544,3 +632,4 @@ function loop() {
 </script>
 </body>
 </html>
+}
