@@ -54,7 +54,7 @@ function loadImage(src) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => { console.warn(`Failed to load ${src}, using fallback`); resolve(null); };
+    img.onerror = () => { console.warn(`Failed to load ${src}`); resolve(null); };
     img.src = src;
   });
 }
@@ -69,6 +69,7 @@ const COLORS = { p1: '#ffd54a', p2: '#4aa3ff', ready: '#6ee7a8', ui: '#e6f0ff' }
 
 let STATE = 'LOADING';
 let assets = { logo: null, titleBG: null, selectBG: null, mascot: null, stage: null };
+let thumbsCache = {}, portraitsCache = {};
 let mode = '1P';
 let select = { p1Index: 0, p2Index: 1, p1Locked: false, p2Locked: false };
 let versusTimer = 0, fightReady = false, pendingFight = null, fightLoadPromise = null;
@@ -92,25 +93,66 @@ function fadeAudio(audio, to = 0, ms = 400) { const from = audio.volume, steps =
 function stopTitleMusic() { if (!titleMusic.paused) fadeAudio(titleMusic, 0, 350); }
 addEventListener('keydown', e => { if (STATE === 'TITLE' && !userInteracted && (e.code === 'Enter' || e.code === 'Space')) { userInteracted = true; startTitleMusic(); } if (e.code === 'KeyM') { titleMusic.muted = !titleMusic.muted; } });
 
+
+// --- VOLLEDIG HERSCHREVEN LAADPROCES ---
+async function tryLoadPaths(paths) {
+    for (const path of paths) {
+        const img = await loadImage(path);
+        if (img) return img;
+    }
+    return null;
+}
+
+async function preloadCharacterUI(character) {
+    if (!character || !character.key) return;
+    const key = character.key;
+
+    // 1. LAAD THUMBNAIL: Prioriteer de 'idle sprite' van het personage.
+    const folders = getFolderForKey(key);
+    let thumbImg = null;
+
+    for (const folder of folders) {
+        thumbImg = await tryLoadPaths([
+            `assets/chars/${folder}/${key}_idle.png`,
+            `assets/chars/${folder}/${key}_idle1.png`
+        ]);
+        if (thumbImg) break;
+    }
+    
+    // Als er geen idle sprite is, probeer de oude /thumbs/ map als fallback.
+    if (!thumbImg) {
+        thumbImg = await loadImage(`${UI.thumbs}${key}.png`);
+    }
+
+    if (thumbImg) {
+        thumbsCache[key] = thumbImg;
+    }
+
+    // 2. LAAD PORTRET: Probeer de speciale portret-afbeelding te laden.
+    const portraitImg = await loadImage(`${UI.portraits}${key}.png`);
+    if (portraitImg) {
+        portraitsCache[key] = portraitImg;
+    } else if (thumbImg) {
+        // 3. FALLBACK: Als er geen portret is, gebruik de (zojuist geladen) thumbnail.
+        console.log(`Portret voor ${key} niet gevonden, gebruik thumbnail als fallback.`);
+        portraitsCache[key] = thumbImg;
+    }
+}
+
 async function preloadAll() {
-  const assetPromises = [
-    loadImage(UI.logo),
-    loadImage(UI.titleBG),
-    loadImage(UI.selectBG),
-    loadImage(UI.mascot),
-    loadImage(STAGE),
-    ...ROSTER.filter(r => r?.key).map(r => loadImage(`${UI.thumbs}${r.key}.png`).catch(() => null)),
-    ...ROSTER.filter(r => r?.key).map(r => loadImage(`${UI.portraits}${r.key}.png`).catch(() => null))
+  const coreAssetPromises = [
+    loadImage(UI.logo).then(img => assets.logo = img),
+    loadImage(UI.titleBG).then(img => assets.titleBG = img),
+    loadImage(UI.selectBG).then(img => assets.selectBG = img),
+    loadImage(UI.mascot).then(img => assets.mascot = img),
+    loadImage(STAGE).then(img => assets.stage = img)
   ];
-  const loadedAssets = await Promise.all(assetPromises);
-  assets.logo = loadedAssets[0] || new Image();
-  assets.titleBG = loadedAssets[1] || null;
-  assets.selectBG = loadedAssets[2] || null;
-  assets.mascot = loadedAssets[3] || null;
-  assets.stage = loadedAssets[4] || null;
-  let idx = 5;
-  ROSTER.filter(r => r?.key).forEach(r => { thumbsCache[r.key] = loadedAssets[idx++] || null; });
-  ROSTER.filter(r => r?.key).forEach(r => { portraitsCache[r.key] = loadedAssets[idx++] || null; });
+
+  const characterAssetPromises = ROSTER
+    .filter(r => r?.key)
+    .map(r => preloadCharacterUI(r));
+    
+  await Promise.all([...coreAssetPromises, ...characterAssetPromises]);
 }
 
 (async function boot() {
@@ -177,7 +219,6 @@ function stepMODE() {
 }
 
 const grid = { cols: 5, rows: 2, cellW: 120, cellH: 120, startX: (W - 5 * 120) / 2, startY: 180 };
-let thumbsCache = {}, portraitsCache = {};
 function getFolderForKey(key) {
   const e = ROSTER.find(r => r?.key === key);
   const base = (e && e.folder) ? e.folder : key;
@@ -186,25 +227,20 @@ function getFolderForKey(key) {
   variants.push(key);
   return [...new Set(variants)];
 }
-async function tryLoad(paths) { for (const p of paths) { const im = await loadImage(p); if (im) return im; } return null; }
-async function getThumb(key) {
-  let t = await loadImage(`${UI.thumbs}${key}.png`);
-  if (t) return t;
-  for (const folder of getFolderForKey(key)) {
-    const p1 = `assets/chars/${folder}/${key}_idle.png`;
-    const p2 = `assets/chars/${folder}/${key}_idle1.png`;
-    const im = await tryLoad([p1, p2]); if (im) return im;
-  }
-  return null;
-}
-async function getPortrait(key) {
-  return (await loadImage(`${UI.portraits}${key}.png`)) || await getThumb(key);
-}
+
 function drawThumbCell(ix, iy, img, locked = false, isReady = false, readyTag = '') {
   const x = grid.startX + ix * grid.cellW, y = grid.startY + iy * grid.cellH, w = grid.cellW - 8, h = grid.cellH - 8;
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-  if (img) { const pad = 16; ctx.drawImage(img, x + pad, y + pad, w - 2 * pad, h - 2 * pad); }
+  if (img) { 
+      // Aangepaste drawImage voor de idle sprites
+      const scale = Math.min((w - 16) / img.width, (h - 16) / img.height);
+      const imgW = img.width * scale;
+      const imgH = img.height * scale;
+      const imgX = x + (w - imgW) / 2;
+      const imgY = y + (h - imgH) / 2;
+      ctx.drawImage(img, imgX, imgY, imgW, imgH);
+  }
   if (locked) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, w, h);
     ctx.fillStyle = '#aaa'; ctx.font = '12px ui-monospace,monospace'; ctx.textAlign = 'center';
@@ -217,24 +253,31 @@ function drawThumbCell(ix, iy, img, locked = false, isReady = false, readyTag = 
     ctx.fillText(readyTag, x + w - 6, y + 16);
   }
 }
-let leftPortrait = null, rightPortrait = null;
-async function stepSELECT() {
+
+function stepSELECT() {
   drawBG(assets.selectBG);
   startTitleMusic();
   const lk = ROSTER[select.p1Index].key, rk = ROSTER[select.p2Index].key;
-  leftPortrait = portraitsCache[lk] || (await getPortrait(lk));
-  rightPortrait = portraitsCache[rk] || (await getPortrait(rk));
+  
+  const leftPortrait = portraitsCache[lk];
+  const rightPortrait = portraitsCache[rk];
+  
   const pSize = 260;
-  if (leftPortrait) ctx.drawImage(leftPortrait, 60, 120, pSize, pSize);
-  if (rightPortrait) ctx.drawImage(rightPortrait, W - 60 - pSize, 120, pSize, pSize);
+  if (leftPortrait) {
+    ctx.drawImage(leftPortrait, 60, 120, pSize, pSize);
+  }
+  if (rightPortrait) {
+    ctx.drawImage(rightPortrait, W - 60 - pSize, 120, pSize, pSize);
+  }
+
   ctx.fillStyle = COLORS.p1; ctx.font = '18px ui-monospace,monospace'; ctx.textAlign = 'left'; ctx.fillText('1P', 60, 120 + pSize + 22);
   ctx.fillStyle = COLORS.p2; ctx.textAlign = 'right'; ctx.fillText('2P', W - 60, 120 + pSize + 22);
   for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
     const idx = r * grid.cols + c, cell = ROSTER[idx], locked = !cell?.key;
-    if (cell?.key && !thumbsCache[cell.key]) thumbsCache[cell.key] = await getThumb(cell.key);
     const isReadyP1 = select.p1Locked && idx === select.p1Index;
     const isReadyP2 = mode === '2P' && select.p2Locked && idx === select.p2Index;
-    drawThumbCell(c, r, cell?.key ? thumbsCache[cell.key] : null, locked, isReadyP1 || isReadyP2, (isReadyP1 ? '1P ' : '') + (isReadyP2 ? '2P' : ''));
+    const thumbImg = cell?.key ? thumbsCache[cell.key] : null;
+    drawThumbCell(c, r, thumbImg, locked, isReadyP1 || isReadyP2, (isReadyP1 ? '1P ' : '') + (isReadyP2 ? '2P' : ''));
   }
   const cur = (i, col, tag) => {
     const ix = i % grid.cols, iy = Math.floor(i / grid.cols), x = grid.startX + ix * grid.cellW, y = grid.startY + iy * grid.cellH;
@@ -275,9 +318,6 @@ async function stepSELECT() {
     select.p2Locked = true;
   }
   if (select.p1Locked && select.p2Locked) {
-    const k1 = ROSTER[select.p1Index].key, k2 = ROSTER[select.p2Index].key;
-    if (!portraitsCache[k1]) portraitsCache[k1] = await getPortrait(k1);
-    if (!portraitsCache[k2]) portraitsCache[k2] = await getPortrait(k2);
     STATE = 'VERSUS'; versusTimer = 0; fightReady = false; pendingFight = null; clearKeys(); cooldown = 8;
   }
   if (keys.has('Escape')) { STATE = 'MODE'; select = { p1Index: 0, p2Index: 1, p1Locked: false, p2Locked: false }; clearKeys(); sfxBeep(500); cooldown = 8; }
@@ -287,34 +327,38 @@ function stepVERSUS() {
   drawBG(null); ctx.fillStyle = '#10151b'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#fff'; ctx.font = '24px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.fillText('VERSUS', W / 2, 56);
   const left = ROSTER[select.p1Index], right = ROSTER[select.p2Index];
-  const drawSide = (slot, x, fighter) => {
-    const p = portraitsCache[slot.key]; if (p) { const s = Math.min(1, 240 / Math.max(p.width, p.height)); const w = p.width * s, h = p.height * s; ctx.drawImage(p, x - w / 2, fighter.y - h / 2, w, h); }
-    ctx.fillStyle = '#e6f0ff'; ctx.font = '20px ui-monospace,monospace'; ctx.fillText(slot.name || slot.key, x, fighter.y + fighter.h / 2 + 20);
+  const drawSide = (slot, x) => {
+    const p = portraitsCache[slot.key];
+    const yPos = GROUND_Y - 64 * SPRITE_SCALE + 50;
+    const hSize = 64 * SPRITE_SCALE;
+    if (p) { 
+        const s = Math.min(1, 240 / Math.max(p.width, p.height)); 
+        const w = p.width * s, h = p.height * s; 
+        ctx.drawImage(p, x - w / 2, yPos - h / 2, w, h); 
+    }
+    ctx.fillStyle = '#e6f0ff'; ctx.font = '20px ui-monospace,monospace'; 
+    ctx.fillText(slot.name || slot.key, x, yPos + hSize / 2 + 20);
   };
-  if (fight.p1 && fight.p2) {
-    drawSide(left, W * 0.25, fight.p1);
-    drawSide(right, W * 0.75, fight.p2);
-    fight.p1.draw();
-    fight.p2.draw();
-  } else {
-    drawSide(left, W * 0.25, { y: GROUND_Y - 64 * SPRITE_SCALE + 50, h: 64 * SPRITE_SCALE });
-    drawSide(right, W * 0.75, { y: GROUND_Y - 64 * SPRITE_SCALE + 50, h: 64 * SPRITE_SCALE });
-  }
+  drawSide(left, W * 0.25);
+  drawSide(right, W * 0.75);
   ctx.fillStyle = COLORS.p1; ctx.font = '16px ui-monospace,monospace'; ctx.fillText('1P', W * 0.25, 86);
   ctx.fillStyle = COLORS.p2; ctx.fillText('2P', W * 0.75, 86);
   ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '14px ui-monospace,monospace'; ctx.fillText(fightReady ? 'READY!' : 'Loading…', W / 2, H - 24);
   startTitleMusic();
   if (!fightLoadPromise) {
-    const watchdogMs = 5000; // 5 seconden time-out
     const L = ROSTER[select.p1Index], R = ROSTER[select.p2Index];
-    fightLoadPromise = startFight(L, R, mode).then(() => { fightReady = true; }).catch(e => { console.error('Fight load failed:', e); fightReady = true; }); // Force ready op error
-    setTimeout(() => { if (!fightReady) { console.warn('Fight load timed out'); fightReady = true; } }, watchdogMs);
+    fightLoadPromise = startFight(L, R, mode)
+      .then(() => { fightReady = true; })
+      .catch(e => { 
+          console.error('Fight load failed:', e); 
+          fightReady = true;
+      });
   }
   versusTimer++;
   if (versusTimer > 60 && fightReady) { STATE = 'FIGHT'; stopTitleMusic(); clearKeys(); cooldown = 8; fightLoadPromise = null; }
 }
 
-const GRAV = 0.75, FRICTION = 0.85, SPRITE_SCALE = 2.25, GROUND_Y = 530; // Aangepast naar 530
+const GRAV = 0.75, FRICTION = 0.85, SPRITE_SCALE = 2.25, GROUND_Y = 530;
 const ENERGY_MAX = 100, ENERGY_HIT_GAIN = 12, ENERGY_GOT_HIT_GAIN = 6, ENERGY_PASSIVE_PER_FRAME = 0.5 / 60, ENERGY_POWER_COST = 40, ENERGY_CHARGE_PER_FRAME = 20 / 60;
 const DAMAGE_NORMAL = 6, DAMAGE_POWER = 10;
 let fight = { p1: null, p2: null, stage: null, freeze: 0, paused: false, round: 1, w1: 0, w2: 0, phase: 'intro', phaseTimer: 0, roundSettled: false, matchOver: false }, impacts = [];
@@ -340,7 +384,7 @@ async function loadAnim(folders, key, state) {
   const frames = [];
   for (const folder of folders) { const exact = await any(`assets/chars/${folder}/${key}_${state}`); if (exact) { frames.push(exact); break; } }
   for (const folder of folders) { for (let n = 1; n <= 8; n++) { const fr = await any(`assets/chars/${folder}/${key}_${state}${n}`); if (fr) frames.push(fr); } if (frames.length) break; }
-  return frames.length ? frames : [await loadImage('data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==')]; // 1x1 transparent pixel als fallback
+  return frames.length ? frames : [await loadImage('data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==')];
 }
 async function loadFighterSprites(entry) {
   const key = entry.key, folders = getFolderForKey(key);
@@ -406,25 +450,24 @@ class Fighter {
   }
   physics() { this.vy += GRAV; this.x += this.vx; this.y += this.vy; if (this.y + this.h >= GROUND_Y) { this.y = GROUND_Y - this.h; this.vy = 0; this.onGround = true; } this.x = Math.max(20, Math.min(W - 20 - this.w, this.x)); }
   animStep() { const spd = { idle: 8, walk: 10, run: 12, kneel: 1, punch: 12, kick: 12, kp: 12, kk: 12, power: 14, ko: 6 }; const arr = this.anim[this.state] || this.anim.idle; const fps = (spd[this.state] || 8); this.timer += fps / 60; if (this.timer >= 1) { this.timer = 0; this.frame++; if (['punch', 'kick', 'kp', 'kk', 'power', 'ko'].includes(this.state)) this.attackTimer++; } if (this.frame >= arr.length) { if (['punch', 'kick', 'kp', 'kk', 'power', 'ko'].includes(this.state)) { this.frame = arr.length - 1; if (this.state !== 'ko') { this._hold = (this._hold || 0) + 1; if (this._hold > 6) { this._hold = 0; this.play('idle'); } } } else this.frame = 0; } this.addEnergy(ENERGY_PASSIVE_PER_FRAME); if (this.charging) this.chargePulse += 0.12; else this.chargePulse = 0; }
-  draw() { const arr = this.anim[this.state] || this.anim.idle; const img = arr[Math.min(this.frame, arr.length - 1)]; if (this.charging) { const cx = this.x + this.w / 2, cy = this.y + this.h * 0.55, r = 18 + Math.sin(this.chargePulse) * 4; const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 3); g.addColorStop(0, 'rgba(100,180,255,0.35)'); g.addColorStop(1, 'rgba(100,180,255,0.0)'); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 3, 0, Math.PI * 2); ctx.fill(); ctx.restore(); } ctx.save(); if (this.facing === -1) { ctx.translate(this.x + this.w, this.y); ctx.scale(-1, 1); } else ctx.translate(this.x, this.y); ctx.drawImage(img, 0, 0, this.w, this.h); ctx.restore(); }
+  draw() { const arr = this.anim[this.state] || this.anim.idle; const img = arr[Math.min(this.frame, arr.length - 1)]; if (this.charging) { const cx = this.x + this.w / 2, cy = this.y + this.h * 0.55, r = 18 + Math.sin(this.chargePulse) * 4; const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 3); g.addColorStop(0, 'rgba(100,180,255,0.35)'); g.addColorStop(1, 'rgba(100,180,255,0.0)'); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 3, 0, Math.PI * 2); ctx.fill(); ctx.restore(); } ctx.save(); if (this.facing === -1) { ctx.translate(this.x + this.w, this.y); ctx.scale(-1, 1); } else ctx.translate(this.x, this.y); if (img) { ctx.drawImage(img, 0, 0, this.w, this.h); } ctx.restore(); }
 }
 async function startFight(entry1, entry2, mode) {
-  fight.stage = fight.stage || await loadImage(STAGE);
   const [a1, a2] = await Promise.all([loadFighterSprites(entry1), loadFighterSprites(entry2)]);
   fight.p1 = new Fighter(entry1.name || entry1.key, a1, 'P1');
   fight.p2 = new Fighter(entry2.name || entry2.key, a2, mode === '2P' ? 'P2' : 'CPU');
   fight.round = 1; fight.w1 = 0; fight.w2 = 0; fight.paused = false; fight.phase = 'intro'; fight.phaseTimer = 90;
   fight.roundSettled = false; fight.matchOver = false;
   resetPositions(); fight.freeze = 0; impacts = [];
-  console.log('Fight initialized:', fight.p1.name, fight.p2.name); // Debug log
+  console.log('Fight initialized:', fight.p1.name, fight.p2.name);
 }
 function resetPositions() {
   fight.p1.resetRound(1);
   fight.p2.resetRound(-1);
   fight.p1.x = W * 0.30 - fight.p1.w / 2;
   fight.p2.x = W * 0.70 - fight.p2.w / 2;
-  fight.p1.y = GROUND_Y - fight.p1.h + 0; // Consistent met nieuwe GROUND_Y
-  fight.p2.y = GROUND_Y - fight.p2.h + 0; // Consistent met nieuwe GROUND_Y
+  fight.p1.y = GROUND_Y - fight.p1.h + 0;
+  fight.p2.y = GROUND_Y - fight.p2.h + 0;
 }
 
 function drawPause() {
@@ -437,8 +480,8 @@ function drawPause() {
 function togglePause() { fight.paused = !fight.paused; if (fight.paused) clearKeys(); }
 
 function stepFIGHT() {
-  drawBG(fight.stage);
-  if (!fightReady) { ctx.fillStyle = '#e6f0ff'; ctx.font = '16px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.fillText('Loading...', W / 2, H / 2); return; }
+  drawBG(assets.stage);
+  if (!fight.p1 || !fight.p2) { ctx.fillStyle = '#e6f0ff'; ctx.font = '16px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.fillText('Loading...', W / 2, H / 2); return; }
   if (keys.has('KeyP') || keys.has('Escape')) { togglePause(); keys.delete('KeyP'); keys.delete('Escape'); }
   if (fight.paused) {
     drawBars(fight.p1, fight.p2); fight.p1.draw(); fight.p2.draw(); drawPause();
@@ -454,7 +497,7 @@ function stepFIGHT() {
     ctx.fillText(fight.w1 > fight.w2 ? '1P WINS MATCH!' : '2P WINS MATCH!', W / 2, H / 2 - 10);
     ctx.font = '16px ui-monospace,monospace';
     ctx.fillText('ENTER: rematch · ESC: terug naar SELECT', W / 2, H / 2 + 26);
-    if (keys.has('Enter')) { const e1 = ROSTER[select.p1Index], e2 = ROSTER[select.p2Index]; fightReady = false; pendingFight = null; startFight(e1, e2, mode); clearKeys(); }
+    if (keys.has('Enter')) { const e1 = ROSTER[select.p1Index], e2 = ROSTER[select.p2Index]; fightReady = false; fightLoadPromise = null; fight.p1 = null; fight.p2 = null; STATE = 'VERSUS'; clearKeys(); }
     if (keys.has('Escape')) { STATE = 'SELECT'; select.p1Locked = false; select.p2Locked = false; clearKeys(); cooldown = 8; }
     return;
   }
