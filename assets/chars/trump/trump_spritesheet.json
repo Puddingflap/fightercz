@@ -1,0 +1,215 @@
+{
+	"frames": {
+		"trump_idle.png": {
+			"frame": {
+				"x": 1,
+				"y": 1,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_kick1.png": {
+			"frame": {
+				"x": 136,
+				"y": 1,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_kk1.png": {
+			"frame": {
+				"x": 271,
+				"y": 1,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_kneel1.png": {
+			"frame": {
+				"x": 1,
+				"y": 203,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_ko.png": {
+			"frame": {
+				"x": 136,
+				"y": 203,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_kp1.png": {
+			"frame": {
+				"x": 271,
+				"y": 203,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_power1.png": {
+			"frame": {
+				"x": 406,
+				"y": 1,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_punch1.png": {
+			"frame": {
+				"x": 406,
+				"y": 203,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_run1.png": {
+			"frame": {
+				"x": 1,
+				"y": 405,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		},
+		"trump_walk1.png": {
+			"frame": {
+				"x": 136,
+				"y": 405,
+				"w": 133,
+				"h": 200
+			},
+			"rotated": false,
+			"trimmed": false,
+			"spriteSourceSize": {
+				"x": 0,
+				"y": 0,
+				"w": 133,
+				"h": 200
+			},
+			"sourceSize": {
+				"w": 133,
+				"h": 200
+			}
+		}
+	},
+	"meta": {
+		"app": "http://www.codeandweb.com/texturepacker",
+		"version": "1.0",
+		"image": "spritesheet.png",
+		"format": "RGBA8888",
+		"size": {
+			"w": 540,
+			"h": 606
+		},
+		"scale": "1"
+	}
+}
