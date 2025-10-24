@@ -64,7 +64,8 @@ function sfxBeep(f = 880, d = .07) { try { const a = new (window.AudioContext ||
 
 const UI = { logo: 'assets/ui/logo.png', titleBG: 'assets/ui/title_bg.jpg', selectBG: 'assets/ui/select_bg.jpg', portraits: 'assets/ui/portraits/', thumbs: 'assets/ui/thumbs/', mascot: 'assets/ui/mascot.png' };
 const STAGE = 'assets/stages/market.png';
-const ROSTER = [ { key: 'cz', name: 'CZ' }, { key: 'dusty', name: 'Dusty' }, { key: 'four', name: 'Four' }, { key: 'drshin', name: 'Dr. Shin', folder: 'dr.shin' }, { key: 'jeffcry', name: 'Jeffcry' }, { key: null }, { key: null }, { key: null }, { key: null }, { key: null }, ];
+// --- HIER IS TRUMP TOEGEVOEGD ---
+const ROSTER = [ { key: 'cz', name: 'CZ' }, { key: 'dusty', name: 'Dusty' }, { key: 'four', name: 'Four' }, { key: 'drshin', name: 'Dr. Shin', folder: 'dr.shin' }, { key: 'jeffcry', name: 'Jeffcry' }, { key: 'trump', name: 'Trump' }, { key: null }, { key: null }, { key: null }, { key: null }, ];
 const COLORS = { p1: '#ffd54a', p2: '#4aa3ff', ready: '#6ee7a8', ui: '#e6f0ff' };
 
 let STATE = 'LOADING';
@@ -118,15 +119,21 @@ async function preloadCharacterUI(character) {
     const folders = getFolderForKey(key);
     let thumbImg = null;
     for (const folder of folders) {
+        // Probeert EERST de _idle1.png te laden (belangrijk voor thumbnails)
         thumbImg = await tryLoadPaths([ `assets/chars/${folder}/${key}_idle.png`, `assets/chars/${folder}/${key}_idle1.png` ]);
         if (thumbImg) break;
     }
+    // Oude fallback (niet echt meer nodig met spritesheets, maar kan geen kwaad)
     if (!thumbImg) { thumbImg = await loadImage(`${UI.thumbs}${key}.png`); }
     if (thumbImg) { thumbsCache[key] = thumbImg; }
+
+    // Laad het portret
     const portraitImg = await loadImage(`${UI.portraits}${key}.png`);
-    if (portraitImg) { portraitsCache[key] = portraitImg; } 
+    if (portraitImg) { portraitsCache[key] = portraitImg; }
+    // Fallback: Als er geen portret is, gebruik de idle thumb
     else if (thumbImg) { portraitsCache[key] = thumbImg; }
 }
+
 
 async function preloadAll() {
   const coreAssetPromises = [
@@ -136,6 +143,7 @@ async function preloadAll() {
     loadImage(UI.mascot).then(img => assets.mascot = img),
     loadImage(STAGE).then(img => assets.stage = img)
   ];
+  // Laadt nu UI (thumbnails en portraits) voor ALLE personages in de ROSTER
   const characterAssetPromises = ROSTER.filter(r => r?.key).map(r => preloadCharacterUI(r));
   await Promise.all([...coreAssetPromises, ...characterAssetPromises]);
 }
@@ -206,12 +214,17 @@ function drawThumbCell(ix, iy, img, locked = false, isReady = false, readyTag = 
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   if (img) {
-      const scale = Math.min((w - 16) / img.width, (h - 16) / img.height);
-      const imgW = img.width * scale;
-      const imgH = img.height * scale;
-      const imgX = x + (w - imgW) / 2;
-      const imgY = y + (h - imgH) / 2;
-      ctx.drawImage(img, imgX, imgY, imgW, imgH);
+      // Probeer de afbeelding gecentreerd en geschaald te tekenen
+      const aspectRatio = img.width / img.height;
+      let drawW = w - 32; // Padding van 16px aan elke kant
+      let drawH = drawW / aspectRatio;
+      if (drawH > h - 32) {
+          drawH = h - 32;
+          drawW = drawH * aspectRatio;
+      }
+      const drawX = x + (w - drawW) / 2;
+      const drawY = y + (h - drawH) / 2;
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
   }
   if (locked) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, w, h);
@@ -255,7 +268,7 @@ function stepSELECT() {
   };
   if (!select.p1Locked) cur(select.p1Index, COLORS.p1, '1P');
   if (mode === '2P' && !select.p2Locked) cur(select.p2Index, COLORS.p2, '2P');
-  const nameAt = i => ROSTER[i].key ? ROSTER[i].name : '—';
+  const nameAt = i => ROSTER[i]?.key ? ROSTER[i].name : '—'; // Veiligere check
   ctx.fillStyle = '#e6f0ff'; ctx.font = '18px ui-monospace,monospace'; ctx.textAlign = 'center';
   ctx.fillText(nameAt(select.p1Index), W * 0.25, H - 40);
   ctx.fillText(nameAt(select.p2Index), W * 0.75, H - 40);
@@ -263,25 +276,32 @@ function stepSELECT() {
   const move = (who, dx, dy) => {
     const cols = grid.cols, rows = grid.rows;
     let i = (who === 'p1' ? select.p1Index : select.p2Index), x = i % cols, y = Math.floor(i / cols);
-    do { x = Math.max(0, Math.min(cols - 1, x + dx)); y = Math.max(0, Math.min(rows - 1, y + dy)); i = y * cols + x; } while (ROSTER[i] && !ROSTER[i].key && (dx !== 0 || dy !== 0));
-    if (ROSTER[i] && ROSTER[i].key) { if (who === 'p1') select.p1Index = i; else select.p2Index = i; sfxBeep(700); }
+    do { 
+        x = (x + dx + cols) % cols; // Wrap around horizontaal
+        y = (y + dy + rows) % rows; // Wrap around verticaal
+        i = y * cols + x; 
+    } while (ROSTER[i] && !ROSTER[i].key && (dx !== 0 || dy !== 0)); // Blijf zoeken als het een leeg slot is
+
+    if (ROSTER[i] && ROSTER[i].key) { // Check opnieuw of we een geldig slot hebben gevonden
+        if (who === 'p1') select.p1Index = i; else select.p2Index = i; sfxBeep(700); 
+    }
   };
   if (!select.p1Locked) {
-    if (keys.has('ArrowLeft')) { move('p1', -1, 0); keys.delete('ArrowLeft'); }
-    if (keys.has('ArrowRight')) { move('p1', 1, 0); keys.delete('ArrowRight'); }
-    if (keys.has('ArrowUp')) { move('p1', 0, -1); keys.delete('ArrowUp'); }
-    if (keys.has('ArrowDown')) { move('p1', 0, 1); keys.delete('ArrowDown'); }
-    if (keys.has('Enter') || keys.has('Space')) { if (ROSTER[select.p1Index].key) { select.p1Locked = true; sfxBeep(900); } keys.delete('Enter'); keys.delete('Space'); }
+    if (keys.has('ArrowLeft')) { move('p1', -1, 0); keys.delete('ArrowLeft'); cooldown = 5;} // Cooldown toegevoegd
+    if (keys.has('ArrowRight')) { move('p1', 1, 0); keys.delete('ArrowRight'); cooldown = 5;}
+    if (keys.has('ArrowUp')) { move('p1', 0, -1); keys.delete('ArrowUp'); cooldown = 5;}
+    if (keys.has('ArrowDown')) { move('p1', 0, 1); keys.delete('ArrowDown'); cooldown = 5;}
+    if (keys.has('Enter') || keys.has('Space')) { if (ROSTER[select.p1Index]?.key) { select.p1Locked = true; sfxBeep(900); } keys.delete('Enter'); keys.delete('Space'); }
   }
   if (mode === '2P' && !select.p2Locked) {
-    if (keys.has('KeyA')) { move('p2', -1, 0); keys.delete('KeyA'); }
-    if (keys.has('KeyD')) { move('p2', 1, 0); keys.delete('KeyD'); }
-    if (keys.has('KeyW')) { move('p2', 0, -1); keys.delete('KeyW'); }
-    if (keys.has('KeyS')) { move('p2', 0, 1); keys.delete('KeyS'); }
-    if (keys.has('KeyF') || keys.has('KeyG')) { if (ROSTER[select.p2Index].key) { select.p2Locked = true; sfxBeep(900); } keys.delete('KeyF'); keys.delete('KeyG'); }
+    if (keys.has('KeyA')) { move('p2', -1, 0); keys.delete('KeyA'); cooldown = 5;}
+    if (keys.has('KeyD')) { move('p2', 1, 0); keys.delete('KeyD'); cooldown = 5;}
+    if (keys.has('KeyW')) { move('p2', 0, -1); keys.delete('KeyW'); cooldown = 5;}
+    if (keys.has('KeyS')) { move('p2', 0, 1); keys.delete('KeyS'); cooldown = 5;}
+    if (keys.has('KeyF') || keys.has('KeyG')) { if (ROSTER[select.p2Index]?.key) { select.p2Locked = true; sfxBeep(900); } keys.delete('KeyF'); keys.delete('KeyG'); }
   }
   if (mode === '1P' && select.p1Locked && !select.p2Locked) {
-    const choices = ROSTER.map((c, i) => ({ c, i })).filter(o => o.c.key && o.i !== select.p1Index);
+    const choices = ROSTER.map((c, i) => ({ c, i })).filter(o => o.c?.key && o.i !== select.p1Index);
     if (choices.length) { const pick = choices[Math.floor(Math.random() * choices.length)]; select.p2Index = pick.i; }
     select.p2Locked = true;
   }
@@ -391,24 +411,35 @@ async function loadFighterSprites(entry) {
             const match = frameName.match(/_([a-zA-Z]+)/);
             if (match && match[1]) {
                 const stateName = match[1].replace(/[0-9]/g, ''); // Verwijder cijfers
-                if (states[stateName]) {
+                if (states[stateName] !== undefined) { // Check of de state bestaat
                     states[stateName].push(frameName);
+                } else {
+                    console.warn(`Onbekende animatiestaat gevonden in JSON voor ${key}: ${stateName} (van ${frameName})`);
                 }
             }
         }
         
         for(const state in states) {
             states[state].sort();
-            // Fallback voor animaties die niet in de spritesheet zitten
-            if (states[state].length === 0) {
-                states[state] = states.idle; 
+            // Fallback voor animaties die niet in de spritesheet zitten (gebruik idle)
+            if (states[state].length === 0 && states.idle.length > 0) {
+                 console.warn(`Animatie ${state} voor ${key} niet gevonden in spritesheet, gebruik idle als fallback.`);
+                 states[state] = states.idle;
+            } else if (states[state].length === 0) {
+                 console.error(`GEEN frames gevonden voor ${state} EN geen idle fallback voor ${key}!`);
+                 // Voeg een placeholder toe om crashes te voorkomen
+                 states[state] = ['placeholder_frame_name'];
+                 if (!data.frames['placeholder_frame_name']) {
+                     // Maak een minimale placeholder entry als die niet bestaat
+                     data.frames['placeholder_frame_name'] = { frame: { x: 0, y: 0, w: 1, h: 1 } };
+                 }
             }
         }
 
         return { isSpritesheet: true, sheet: sheetImage, data: data.frames, states };
 
     } catch (error) {
-        console.warn(`Spritesheet voor ${key} niet gevonden, terugvallen op oude methode.`);
+        console.warn(`Spritesheet voor ${key} niet gevonden of fout bij laden: ${error.message}. Terugvallen op oude methode.`);
         return loadFighterSprites_Legacy(entry);
     }
 }
@@ -483,8 +514,16 @@ class Fighter {
   
   animStep() {
     const spd = { idle: 8, walk: 10, run: 12, kneel: 1, punch: 12, kick: 12, kp: 12, kk: 12, power: 14, ko: 6 };
+    // Bepaal welke lijst met frames we moeten gebruiken (spritesheet of oude methode)
     const animFrames = this.sprite.isSpritesheet ? (this.sprite.states[this.state] || this.sprite.states.idle) : (this.sprite[this.state] || this.sprite.idle);
-    if (!animFrames || animFrames.length === 0) return;
+    
+    // Check of er wel frames zijn voor deze animatie
+    if (!animFrames || animFrames.length === 0 || animFrames[0] === 'placeholder_frame_name') {
+        console.warn(`Geen geldige frames gevonden voor state ${this.state} bij ${this.name}`);
+        // Optioneel: speel idle af als fallback
+        if (this.state !== 'idle') this.play('idle');
+        return; 
+    }
 
     const fps = (spd[this.state] || 8);
     this.timer += fps / 60;
@@ -523,16 +562,32 @@ class Fighter {
     if (this.sprite.isSpritesheet) {
         // NIEUWE METHODE: Teken een stukje uit de spritesheet
         const animFrames = this.sprite.states[this.state] || this.sprite.states.idle;
-        const currentFrameName = animFrames[Math.min(this.frame, animFrames.length - 1)];
-        const frameData = this.sprite.data[currentFrameName];
-        if (frameData) {
-            const { x: sx, y: sy, w: sW, h: sH } = frameData.frame;
-            ctx.drawImage(this.sprite.sheet, sx, sy, sW, sH, 0, 0, this.w, this.h);
+        // Veiligheid check: Zorg dat frame index binnen de grenzen blijft
+        const currentFrameIndex = Math.min(this.frame, animFrames.length - 1); 
+        const currentFrameName = animFrames[currentFrameIndex];
+        
+        if (currentFrameName === 'placeholder_frame_name' && this.sprite.data['placeholder_frame_name']) {
+             // Teken een rode box als placeholder
+             ctx.fillStyle = 'red';
+             ctx.fillRect(0, 0, this.w, this.h);
+        } else {
+            const frameData = this.sprite.data[currentFrameName];
+            if (frameData) {
+                const { x: sx, y: sy, w: sW, h: sH } = frameData.frame;
+                ctx.drawImage(this.sprite.sheet, sx, sy, sW, sH, 0, 0, this.w, this.h);
+            } else {
+                 console.error(`Frame data niet gevonden voor ${currentFrameName} in state ${this.state} bij ${this.name}`);
+                 // Optioneel: teken placeholder
+                 ctx.fillStyle = 'purple';
+                 ctx.fillRect(0, 0, this.w, this.h);
+            }
         }
     } else {
         // OUDE METHODE: Teken een losse afbeelding
         const anim = this.sprite[this.state] || this.sprite.idle;
-        const img = anim[Math.min(this.frame, anim.length - 1)];
+        // Veiligheid check
+        const currentFrameIndex = Math.min(this.frame, anim.length - 1);
+        const img = anim[currentFrameIndex];
         if (img) {
             ctx.drawImage(img, 0, 0, this.w, this.h);
         }
@@ -550,7 +605,6 @@ async function startFight(entry1, entry2, mode) {
   fight.roundSettled = false; fight.matchOver = false;
   resetPositions(); fight.freeze = 0; impacts = [];
 }
-// ... (resetPositions en de rest van de fight logic blijft ongewijzigd) ...
 function resetPositions() {
   fight.p1.resetRound(1);
   fight.p2.resetRound(-1);
@@ -632,4 +686,3 @@ function loop() {
 </script>
 </body>
 </html>
-}
